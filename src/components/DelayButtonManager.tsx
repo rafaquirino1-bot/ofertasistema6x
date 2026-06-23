@@ -100,13 +100,13 @@ export default function DelayButtonManager({ checkoutUrl, initialSeconds }: Dela
                 isSyncedWithVideo.current = true;
                 
                 const secondsFromEnd = duration - currentTime;
+                const unlockThreshold = Math.min(480, duration); // Reveal during the last 8 minutes (480s) or immediately if shorter
                 
-                // Unlock 10 seconds before video end
-                if (secondsFromEnd <= 10 && secondsFromEnd >= 0) {
+                if (secondsFromEnd <= unlockThreshold && secondsFromEnd >= 0) {
                   setIsButtonVisible(true);
-                } else if (secondsFromEnd > 10) {
+                } else if (secondsFromEnd > unlockThreshold) {
                   setIsButtonVisible(false);
-                  const newTimeLeft = Math.ceil(secondsFromEnd - 10);
+                  const newTimeLeft = Math.ceil(secondsFromEnd - unlockThreshold);
                   updateTimeLeftDOM(newTimeLeft);
                 }
               }

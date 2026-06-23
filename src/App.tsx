@@ -98,7 +98,7 @@ export default function App() {
           {/* DELAYED BUTTON AND FEEDBACK */}
           <DelayButtonManager 
             checkoutUrl={config.checkoutUrl} 
-            initialSeconds={1045} 
+            initialSeconds={575} 
           />
 
         </div>
