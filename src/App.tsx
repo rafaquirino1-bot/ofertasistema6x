@@ -42,6 +42,8 @@ export default function App() {
   const [currentDateFormatted, setCurrentDateFormatted] = useState('');
 
   const buyButtonRef = useRef<HTMLDivElement>(null);
+  const isSyncedWithVideo = useRef(false);
+  const lastUpdatedSecond = useRef<number>(-1);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -69,6 +71,9 @@ export default function App() {
 
     // Start a 1-second interval to update fallback time
     const interval = setInterval(() => {
+      // If we are already receiving high-precision live events from the video player, disable this fallback timer completely!
+      if (isSyncedWithVideo.current) return;
+
       // Decrement by 1 only if greater than 0
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -102,15 +107,32 @@ export default function App() {
               const duration = parsedData.duration ?? parsedData.totalTime ?? parsedData.total_time;
 
               if (typeof currentTime === 'number' && typeof duration === 'number' && duration > 0) {
+                // Throttle: only update once per full second of video time
+                const currentSecond = Math.floor(currentTime);
+                if (lastUpdatedSecond.current === currentSecond) {
+                  return;
+                }
+                lastUpdatedSecond.current = currentSecond;
+
+                // Successfully received video playback coordinates; prioritize this live feed!
+                isSyncedWithVideo.current = true;
+                
                 const secondsFromEnd = duration - currentTime;
                 
                 // If there are exactly 10s or less left to finish the video:
                 if (secondsFromEnd <= 10 && secondsFromEnd >= 0) {
-                  setIsButtonVisible(true);
+                  setIsButtonVisible((prev) => prev ? prev : true);
                   setTimeLeft(0);
                 } else if (secondsFromEnd > 10) {
-                  setIsButtonVisible(false);
-                  setTimeLeft(Math.ceil(secondsFromEnd - 10)); // Sync exactly with active video duration
+                  setIsButtonVisible((prev) => prev ? false : prev);
+                  const newTimeLeft = Math.ceil(secondsFromEnd - 10);
+                  // Leverage React's state bailout to only trigger a re-render when the integer seconds actually change.
+                  setTimeLeft((prev) => {
+                    if (prev !== newTimeLeft) {
+                      return newTimeLeft;
+                    }
+                    return prev;
+                  });
                 }
               }
             }

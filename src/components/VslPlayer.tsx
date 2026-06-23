@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function VslPlayer() {
+const VslPlayer = React.memo(function VslPlayer() {
   return (
     <div className="mx-auto w-full max-w-[360px] sm:max-w-[400px] px-4">
       {/* 9:16 Aspect Ratio Frame */}
@@ -18,5 +18,8 @@ export default function VslPlayer() {
       </div>
     </div>
   );
-}
+});
+
+export default VslPlayer;
+
 
