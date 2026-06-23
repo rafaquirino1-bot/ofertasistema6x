@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PageConfig } from './types';
-import AdminPanel from './components/AdminPanel';
 import VslPlayer from './components/VslPlayer';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Lock, ChevronRight, AlertOctagon, HelpCircle } from 'lucide-react';
@@ -10,8 +9,8 @@ const STORAGE_KEY = 'vsl_ia_page_config';
 const DEFAULTS: PageConfig = {
   vslUrl: 'https://scripts.converteai.net/2d124ecc-04ba-4b3a-a61d-0504955992be/players/6a39904861b3e1e42dd72069/v4/player.js',
   vslType: 'vturb',
-  delayMinutes: 0,
-  delaySeconds: 6, // 6 seconds requested delay for testing
+  delayMinutes: 17,
+  delaySeconds: 25, // Unlocks 10 seconds before video end (17:35 duration)
   checkoutUrl: 'https://pay.hub.la/wNBTtbUQaufF8Jc28iRn?ref=6VyMbziLGRuhExLwOTSu',
   price: 97.00,
   originalPrice: 297.00,
@@ -24,9 +23,9 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Force 6 seconds default and the requested Hubla link
-        parsed.delaySeconds = 6;
-        parsed.delayMinutes = 0;
+        // Force the requested delay (17:25) and Hubla checkout URL
+        parsed.delaySeconds = 25;
+        parsed.delayMinutes = 17;
         parsed.checkoutUrl = 'https://pay.hub.la/wNBTtbUQaufF8Jc28iRn?ref=6VyMbziLGRuhExLwOTSu';
         return parsed;
       } catch (e) {
@@ -36,14 +35,19 @@ export default function App() {
     return DEFAULTS;
   });
 
-  const [timeLeft, setTimeLeft] = useState(6);
+  const [timeLeft, setTimeLeft] = useState(1045); // default fallback total seconds (17m 25s)
   const [isButtonVisible, setIsButtonVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<'terms' | 'privacy' | null>(null);
   const [checkoutSimulated, setCheckoutSimulated] = useState(false);
   const [currentDateFormatted, setCurrentDateFormatted] = useState('');
 
   const buyButtonRef = useRef<HTMLDivElement>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Capitalize and format dynamic Portuguese date
   useEffect(() => {
@@ -59,34 +63,71 @@ export default function App() {
     setCurrentDateFormatted(capitalized);
   }, []);
 
-  // Countdown delay system
+  // Dynamic VTurb / Panda Video events + fallback static countdown tracker
   useEffect(() => {
-    setIsButtonVisible(false);
-    const totalSeconds = config.delayMinutes * 60 + config.delaySeconds;
-    setTimeLeft(totalSeconds);
+    if (isButtonVisible) return;
 
-    if (totalSeconds <= 0) {
-      setIsButtonVisible(true);
-      return;
-    }
-
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    timerRef.current = setInterval(() => {
+    // Start a 1-second interval to update fallback time
+    const interval = setInterval(() => {
+      // Decrement by 1 only if greater than 0
       setTimeLeft((prev) => {
         if (prev <= 1) {
           setIsButtonVisible(true);
-          if (timerRef.current) clearInterval(timerRef.current);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    // Also listen to postMessage events from Panda/VTurb
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        let parsedData = event.data;
+        if (typeof parsedData === 'string') {
+          if (parsedData.includes('panda_') || parsedData.includes('pandas_') || parsedData.includes('timeupdate')) {
+            try {
+              parsedData = JSON.parse(parsedData);
+            } catch (err) {
+              // Not JSON
+            }
+          }
+        }
+
+        if (parsedData && typeof parsedData === 'object') {
+          const messageType = parsedData.message || parsedData.event || parsedData.type;
+          
+          if (messageType && typeof messageType === 'string') {
+            if (messageType.includes('timeupdate') || messageType.includes('TimeUpdate')) {
+              const currentTime = parsedData.currentTime ?? parsedData.current_time ?? parsedData.time;
+              const duration = parsedData.duration ?? parsedData.totalTime ?? parsedData.total_time;
+
+              if (typeof currentTime === 'number' && typeof duration === 'number' && duration > 0) {
+                const secondsFromEnd = duration - currentTime;
+                
+                // If there are exactly 10s or less left to finish the video:
+                if (secondsFromEnd <= 10 && secondsFromEnd >= 0) {
+                  setIsButtonVisible(true);
+                  setTimeLeft(0);
+                } else if (secondsFromEnd > 10) {
+                  setIsButtonVisible(false);
+                  setTimeLeft(Math.ceil(secondsFromEnd - 10)); // Sync exactly with active video duration
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Soft error handle
+      }
     };
-  }, [config.delayMinutes, config.delaySeconds]);
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [isButtonVisible]);
 
   // Handle smooth scroll to button when revealed
   useEffect(() => {
@@ -97,32 +138,9 @@ export default function App() {
     }
   }, [isButtonVisible]);
 
-  const handleUpdateConfig = (newConfig: PageConfig) => {
-    setConfig(newConfig);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
-  };
-
-  const handleResetTimer = () => {
-    const totalSeconds = config.delayMinutes * 60 + config.delaySeconds;
-    setTimeLeft(totalSeconds);
-    setIsButtonVisible(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setIsButtonVisible(true);
-          if (timerRef.current) clearInterval(timerRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
   const handleForceShowButton = () => {
     setIsButtonVisible(true);
     setTimeLeft(0);
-    if (timerRef.current) clearInterval(timerRef.current);
   };
 
   const handleCheckout = () => {
@@ -157,16 +175,6 @@ export default function App() {
         </p>
       </div>
 
-      {/* Hidden Dev config toggle inside preview */}
-      <AdminPanel 
-        config={config}
-        onUpdateConfig={handleUpdateConfig}
-        onResetTimer={handleResetTimer}
-        onForceShowButton={handleForceShowButton}
-        isButtonVisible={isButtonVisible}
-        timeLeft={timeLeft}
-      />
-
       {/* CONTENT CENTER CARD AREA (Clean, pure VSL focus) */}
       <main className="flex-grow flex flex-col items-center justify-center py-8 sm:py-12">
         <div className="w-full max-w-lg flex flex-col items-center">
@@ -190,7 +198,7 @@ export default function App() {
                 >
                   <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-neutral-500 font-mono tracking-wider uppercase font-semibold">
                     <Lock className="h-3 w-3 animate-pulse text-amber-500" />
-                    <span>Aguarde {timeLeft}s para liberar o acesso especial...</span>
+                    <span>Aguarde {formatTime(timeLeft)} para liberar o acesso especial...</span>
                   </div>
                 </motion.div>
               ) : (
@@ -251,7 +259,11 @@ export default function App() {
           <p className="leading-relaxed">
             Este site não é afiliado ao Facebook, Google, YouTube ou Meta Platforms. Os resultados variam de pessoa para pessoa.
           </p>
-          <p className="text-[9px]">
+          <p 
+            className="text-[9px] cursor-pointer hover:text-neutral-500 transition-colors select-none"
+            onDoubleClick={handleForceShowButton}
+            title="Dica de Teste: Dê um duplo clique aqui para liberar o botão instantaneamente!"
+          >
             © 2026 VSL IA • Todos os direitos reservados.
           </p>
         </div>
