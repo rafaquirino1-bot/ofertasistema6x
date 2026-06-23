@@ -1,0 +1,6 @@
+{
+  "name": "Página de Vendas VSL IA",
+  "description": "Página de vendas premium e altamente persuasiva com vídeo de vendas (VSL) otimizado, contador dinâmico de liberação do botão de compra e seções de conversão.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
