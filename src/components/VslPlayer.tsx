@@ -35,17 +35,6 @@ export default function VslPlayer() {
             id="backdrop_6a39904861b3e1e42dd72069" 
             className="absolute top-0 left-0 w-full h-full backdrop-blur-2xl bg-black/40"
           />
-          
-          {/* Robust Fallback Iframe if direct script injection gets blocked in container environments */}
-          <iframe 
-            src="https://scripts.converteai.net/2d124ecc-04ba-4b3a-a61d-0504955992be/players/6a39904861b3e1e42dd72069/embed.html" 
-            id="iframe_6a39904861b3e1e42dd72069" 
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }} 
-            allowFullScreen={true} 
-            allow="autoplay" 
-            referrerPolicy="origin"
-            title="VTurb Player VSL"
-          />
         </div>
         
       </div>
