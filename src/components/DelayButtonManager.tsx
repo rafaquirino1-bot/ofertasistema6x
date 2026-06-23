@@ -114,6 +114,24 @@ export default function DelayButtonManager({ checkoutUrl, initialSeconds }: Dela
     }
   }, [isButtonVisible]);
 
+  const getCheckoutWithUtms = () => {
+    if (!checkoutUrl) return '';
+    try {
+      const url = new URL(checkoutUrl);
+      const currentParams = new URLSearchParams(window.location.search);
+      currentParams.forEach((value, key) => {
+        url.searchParams.set(key, value);
+      });
+      return url.toString();
+    } catch (e) {
+      if (window.location.search) {
+        const separator = checkoutUrl.includes('?') ? '&' : '?';
+        return `${checkoutUrl}${separator}${window.location.search.replace(/^\?/, '')}`;
+      }
+      return checkoutUrl;
+    }
+  };
+
   return (
     <div ref={buyButtonRef} className="w-full max-w-[360px] sm:max-w-[400px] px-4 text-center min-h-[90px]">
       <AnimatePresence mode="wait">
@@ -139,7 +157,7 @@ export default function DelayButtonManager({ checkoutUrl, initialSeconds }: Dela
             className="w-full space-y-4 pt-1"
           >
             <a
-              href={checkoutUrl}
+              href={getCheckoutWithUtms()}
               target="_blank"
               rel="noopener noreferrer"
               className="shimmer-swipe block w-full rounded-xl bg-emerald-500 py-4.5 text-center font-display text-base sm:text-lg font-black text-black uppercase tracking-wider hover:bg-emerald-400 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-emerald-500/15 cursor-pointer no-underline"
