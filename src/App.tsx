@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageConfig } from './types';
 import VslPlayer from './components/VslPlayer';
+import DelayButtonManager from './components/DelayButtonManager';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, Lock, ChevronRight, AlertOctagon, HelpCircle } from 'lucide-react';
+import { AlertOctagon, ChevronRight, HelpCircle } from 'lucide-react';
 
 const STORAGE_KEY = 'vsl_ia_page_config';
 
@@ -35,21 +36,9 @@ export default function App() {
     return DEFAULTS;
   });
 
-  const [timeLeft, setTimeLeft] = useState(1045); // default fallback total seconds (17m 25s)
-  const [isButtonVisible, setIsButtonVisible] = useState(false);
   const [activeModal, setActiveModal] = useState<'terms' | 'privacy' | null>(null);
   const [checkoutSimulated, setCheckoutSimulated] = useState(false);
   const [currentDateFormatted, setCurrentDateFormatted] = useState('');
-
-  const buyButtonRef = useRef<HTMLDivElement>(null);
-  const isSyncedWithVideo = useRef(false);
-  const lastUpdatedSecond = useRef<number>(-1);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   // Capitalize and format dynamic Portuguese date
   useEffect(() => {
@@ -64,106 +53,6 @@ export default function App() {
     const capitalized = formatted.charAt(0).toUpperCase() + formatted.slice(1);
     setCurrentDateFormatted(capitalized);
   }, []);
-
-  // Dynamic VTurb / Panda Video events + fallback static countdown tracker
-  useEffect(() => {
-    if (isButtonVisible) return;
-
-    // Start a 1-second interval to update fallback time
-    const interval = setInterval(() => {
-      // If we are already receiving high-precision live events from the video player, disable this fallback timer completely!
-      if (isSyncedWithVideo.current) return;
-
-      // Decrement by 1 only if greater than 0
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setIsButtonVisible(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    // Also listen to postMessage events from Panda/VTurb
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        let parsedData = event.data;
-        if (typeof parsedData === 'string') {
-          if (parsedData.includes('panda_') || parsedData.includes('pandas_') || parsedData.includes('timeupdate')) {
-            try {
-              parsedData = JSON.parse(parsedData);
-            } catch (err) {
-              // Not JSON
-            }
-          }
-        }
-
-        if (parsedData && typeof parsedData === 'object') {
-          const messageType = parsedData.message || parsedData.event || parsedData.type;
-          
-          if (messageType && typeof messageType === 'string') {
-            if (messageType.includes('timeupdate') || messageType.includes('TimeUpdate')) {
-              const currentTime = parsedData.currentTime ?? parsedData.current_time ?? parsedData.time;
-              const duration = parsedData.duration ?? parsedData.totalTime ?? parsedData.total_time;
-
-              if (typeof currentTime === 'number' && typeof duration === 'number' && duration > 0) {
-                // Throttle: only update once per full second of video time
-                const currentSecond = Math.floor(currentTime);
-                if (lastUpdatedSecond.current === currentSecond) {
-                  return;
-                }
-                lastUpdatedSecond.current = currentSecond;
-
-                // Successfully received video playback coordinates; prioritize this live feed!
-                isSyncedWithVideo.current = true;
-                
-                const secondsFromEnd = duration - currentTime;
-                
-                // If there are exactly 10s or less left to finish the video:
-                if (secondsFromEnd <= 10 && secondsFromEnd >= 0) {
-                  setIsButtonVisible((prev) => prev ? prev : true);
-                  setTimeLeft(0);
-                } else if (secondsFromEnd > 10) {
-                  setIsButtonVisible((prev) => prev ? false : prev);
-                  const newTimeLeft = Math.ceil(secondsFromEnd - 10);
-                  // Leverage React's state bailout to only trigger a re-render when the integer seconds actually change.
-                  setTimeLeft((prev) => {
-                    if (prev !== newTimeLeft) {
-                      return newTimeLeft;
-                    }
-                    return prev;
-                  });
-                }
-              }
-            }
-          }
-        }
-      } catch (error) {
-        // Soft error handle
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('message', handleMessage);
-    };
-  }, [isButtonVisible]);
-
-  // Handle smooth scroll to button when revealed
-  useEffect(() => {
-    if (isButtonVisible && buyButtonRef.current) {
-      setTimeout(() => {
-        buyButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 300);
-    }
-  }, [isButtonVisible]);
-
-  const handleForceShowButton = () => {
-    setIsButtonVisible(true);
-    setTimeLeft(0);
-  };
 
   const handleCheckout = () => {
     if (config.checkoutUrl === 'https://pay.kiwify.com.br/vsl-ia-mock-checkout') {
@@ -207,51 +96,10 @@ export default function App() {
           </div>
 
           {/* DELAYED BUTTON AND FEEDBACK */}
-          <div ref={buyButtonRef} className="w-full max-w-[360px] sm:max-w-[400px] px-4 text-center min-h-[90px]">
-            <AnimatePresence mode="wait">
-              {!isButtonVisible ? (
-                // Clean locked state placeholder to secure conversion focus
-                <motion.div 
-                  key="locked"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 0.6 }}
-                  exit={{ opacity: 0 }}
-                  className="flex flex-col items-center justify-center py-2 shrink-0"
-                >
-                  <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-neutral-500 font-mono tracking-wider uppercase font-semibold">
-                    <Lock className="h-3 w-3 animate-pulse text-amber-500" />
-                    <span>Aguarde {formatTime(timeLeft)} para liberar o acesso especial...</span>
-                  </div>
-                </motion.div>
-              ) : (
-                // High Converting Sweep Animated Checkout button
-                <motion.div
-                  key="unlocked"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ type: 'spring', damping: 15 }}
-                  className="w-full space-y-4 pt-1"
-                >
-                  <a
-                    href={config.checkoutUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shimmer-swipe block w-full rounded-xl bg-emerald-500 py-4.5 text-center font-display text-base sm:text-lg font-black text-black uppercase tracking-wider hover:bg-emerald-400 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-emerald-500/15 cursor-pointer no-underline"
-                  >
-                    QUERO ACESSAR AGORA
-                  </a>
-
-                  <div className="flex items-center justify-center gap-3.5 text-[10px] text-neutral-500 font-mono">
-                    <span className="flex items-center gap-1">
-                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> Compra Garantida
-                    </span>
-                    <span className="h-3 w-px bg-neutral-800" />
-                    <span>Garantia de 7 dias</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <DelayButtonManager 
+            checkoutUrl={config.checkoutUrl} 
+            initialSeconds={1045} 
+          />
 
         </div>
       </main>
@@ -283,7 +131,7 @@ export default function App() {
           </p>
           <p 
             className="text-[9px] cursor-pointer hover:text-neutral-500 transition-colors select-none"
-            onDoubleClick={handleForceShowButton}
+            onDoubleClick={() => window.dispatchEvent(new CustomEvent('force-unlock-vsl'))}
             title="Dica de Teste: Dê um duplo clique aqui para liberar o botão instantaneamente!"
           >
             © 2026 VSL IA • Todos os direitos reservados.
