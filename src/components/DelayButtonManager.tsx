@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Lock } from 'lucide-react';
 
 interface DelayButtonManagerProps {
@@ -8,11 +7,32 @@ interface DelayButtonManagerProps {
 }
 
 export default function DelayButtonManager({ checkoutUrl, initialSeconds }: DelayButtonManagerProps) {
-  const [timeLeft, setTimeLeft] = useState(initialSeconds);
   const [isButtonVisible, setIsButtonVisible] = useState(false);
   const buyButtonRef = useRef<HTMLDivElement>(null);
+  const timerTextRef = useRef<HTMLSpanElement>(null);
   const isSyncedWithVideo = useRef(false);
   const lastUpdatedSecond = useRef<number>(-1);
+  const currentTimeLeft = useRef<number>(initialSeconds);
+
+  // Store the initial checkout URL with initial query parameters on mount.
+  // This state is set once and never changed, ensuring React never overwrites the href modified by UTMfy script!
+  const [initialCheckoutUrl] = useState(() => {
+    if (!checkoutUrl) return '';
+    try {
+      const url = new URL(checkoutUrl);
+      const currentParams = new URLSearchParams(window.location.search);
+      currentParams.forEach((value, key) => {
+        url.searchParams.set(key, value);
+      });
+      return url.toString();
+    } catch (e) {
+      if (window.location.search) {
+        const separator = checkoutUrl.includes('?') ? '&' : '?';
+        return `${checkoutUrl}${separator}${window.location.search.replace(/^\?/, '')}`;
+      }
+      return checkoutUrl;
+    }
+  });
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -23,17 +43,28 @@ export default function DelayButtonManager({ checkoutUrl, initialSeconds }: Dela
   useEffect(() => {
     if (isButtonVisible) return;
 
+    // Direct DOM manipulation helper to prevent React virtual DOM rendering overhead
+    const updateTimeLeftDOM = (seconds: number) => {
+      currentTimeLeft.current = seconds;
+      if (timerTextRef.current) {
+        timerTextRef.current.textContent = `Aguarde ${formatTime(seconds)} para liberar o acesso especial...`;
+      }
+    };
+
+    // Initialize display content immediately
+    updateTimeLeftDOM(currentTimeLeft.current);
+
     // Start fallback countdown interval
     const interval = setInterval(() => {
       if (isSyncedWithVideo.current) return;
 
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setIsButtonVisible(true);
-          return 0;
-        }
-        return prev - 1;
-      });
+      const nextVal = currentTimeLeft.current - 1;
+      if (nextVal <= 0) {
+        setIsButtonVisible(true);
+        clearInterval(interval);
+      } else {
+        updateTimeLeftDOM(nextVal);
+      }
     }, 1000);
 
     // Listen to video postMessage events (VTurb / Panda)
@@ -73,11 +104,10 @@ export default function DelayButtonManager({ checkoutUrl, initialSeconds }: Dela
                 // Unlock 10 seconds before video end
                 if (secondsFromEnd <= 10 && secondsFromEnd >= 0) {
                   setIsButtonVisible(true);
-                  setTimeLeft(0);
                 } else if (secondsFromEnd > 10) {
                   setIsButtonVisible(false);
                   const newTimeLeft = Math.ceil(secondsFromEnd - 10);
-                  setTimeLeft(newTimeLeft);
+                  updateTimeLeftDOM(newTimeLeft);
                 }
               }
             }
@@ -91,7 +121,6 @@ export default function DelayButtonManager({ checkoutUrl, initialSeconds }: Dela
     // Global listener for cheat code / force unlock
     const handleForceUnlock = () => {
       setIsButtonVisible(true);
-      setTimeLeft(0);
     };
 
     window.addEventListener('message', handleMessage);
@@ -114,67 +143,51 @@ export default function DelayButtonManager({ checkoutUrl, initialSeconds }: Dela
     }
   }, [isButtonVisible]);
 
-  const getCheckoutWithUtms = () => {
-    if (!checkoutUrl) return '';
-    try {
-      const url = new URL(checkoutUrl);
-      const currentParams = new URLSearchParams(window.location.search);
-      currentParams.forEach((value, key) => {
-        url.searchParams.set(key, value);
-      });
-      return url.toString();
-    } catch (e) {
-      if (window.location.search) {
-        const separator = checkoutUrl.includes('?') ? '&' : '?';
-        return `${checkoutUrl}${separator}${window.location.search.replace(/^\?/, '')}`;
-      }
-      return checkoutUrl;
-    }
-  };
-
   return (
-    <div ref={buyButtonRef} className="w-full max-w-[360px] sm:max-w-[400px] px-4 text-center min-h-[90px]">
-      <AnimatePresence mode="wait">
-        {!isButtonVisible ? (
-          <motion.div 
-            key="locked"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.6 }}
-            exit={{ opacity: 0 }}
-            className="flex flex-col items-center justify-center py-2 shrink-0"
-          >
-            <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-neutral-500 font-mono tracking-wider uppercase font-semibold">
-              <Lock className="h-3 w-3 animate-pulse text-amber-500" />
-              <span>Aguarde {formatTime(timeLeft)} para liberar o acesso especial...</span>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="unlocked"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ type: 'spring', damping: 15 }}
-            className="w-full space-y-4 pt-1"
-          >
-            <a
-              href={getCheckoutWithUtms()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shimmer-swipe block w-full rounded-xl bg-emerald-500 py-4.5 text-center font-display text-base sm:text-lg font-black text-black uppercase tracking-wider hover:bg-emerald-400 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-emerald-500/15 cursor-pointer no-underline"
-            >
-              QUERO ACESSAR AGORA
-            </a>
+    <div ref={buyButtonRef} className="w-full max-w-[360px] sm:max-w-[400px] px-4 text-center min-h-[90px] flex flex-col items-center justify-center relative">
+      
+      {/* LOCKED STATE CONTAINER: Always in DOM, but visually hidden when unlocked */}
+      <div 
+        className={`w-full flex flex-col items-center justify-center py-2 shrink-0 transition-all duration-500 ${
+          isButtonVisible 
+            ? 'opacity-0 pointer-events-none select-none h-0 overflow-hidden absolute' 
+            : 'opacity-60 scale-100 relative'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-neutral-500 font-mono tracking-wider uppercase font-semibold">
+          <Lock className="h-3 w-3 animate-pulse text-amber-500" />
+          <span ref={timerTextRef}>
+            Aguarde {formatTime(initialSeconds)} para liberar o acesso especial...
+          </span>
+        </div>
+      </div>
 
-            <div className="flex items-center justify-center gap-3.5 text-[10px] text-neutral-500 font-mono">
-              <span className="flex items-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> Compra Garantida
-              </span>
-              <span className="h-3 w-px bg-neutral-800" />
-              <span>Garantia de 7 dias</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* UNLOCKED STATE CONTAINER (Checkout Button): Always in DOM so trackers like UTMfy can find it and track the page view instantly! */}
+      <div
+        className={`w-full transition-all duration-500 transform ${
+          isButtonVisible
+            ? 'opacity-100 scale-100 pointer-events-auto relative block space-y-4 pt-1'
+            : 'opacity-0 scale-95 pointer-events-none select-none h-0 overflow-hidden absolute'
+        }`}
+      >
+        <a
+          href={initialCheckoutUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shimmer-swipe block w-full rounded-xl bg-emerald-500 py-4.5 text-center font-display text-base sm:text-lg font-black text-black uppercase tracking-wider hover:bg-emerald-400 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-emerald-500/15 cursor-pointer no-underline"
+        >
+          QUERO ACESSAR AGORA
+        </a>
+
+        <div className="flex items-center justify-center gap-3.5 text-[10px] text-neutral-500 font-mono">
+          <span className="flex items-center gap-1">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" /> Compra Garantida
+          </span>
+          <span className="h-3 w-px bg-neutral-800" />
+          <span>Garantia de 7 dias</span>
+        </div>
+      </div>
+
     </div>
   );
 }

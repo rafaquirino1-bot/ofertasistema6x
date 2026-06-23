@@ -3,7 +3,7 @@ import { PageConfig } from './types';
 import VslPlayer from './components/VslPlayer';
 import DelayButtonManager from './components/DelayButtonManager';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertOctagon, ChevronRight, HelpCircle } from 'lucide-react';
+import { AlertOctagon, ChevronRight, HelpCircle, Lock } from 'lucide-react';
 
 const STORAGE_KEY = 'vsl_ia_page_config';
 
